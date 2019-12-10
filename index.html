@@ -1,0 +1,155 @@
+<html>
+<head>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+
+    <style type="text/css">
+        #mynetwork {
+            width: 800px;
+            height: 600px;
+            border: 1px solid lightgray;
+        }
+        .wrapper {
+            display: flex;
+        }
+        .left {
+            flex: 0 0 65%;
+        }
+        .right {
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="file-load">
+            Select a Cryengine Flowgraph XML file: <input type="file" id="xmlFile" name="xmlFile">
+    </div>
+    
+    <div class="wrapper">
+        <div class="left" id="mynetwork"></div>
+        <div class="right">
+            <pre id="nodeInfo"></pre>
+        </div>        
+    </div>
+    
+
+<script type="text/javascript">
+    var nodes = [], edges = [];
+
+    function getGraphEntityData(params) {
+        var result;
+
+        if (params.nodes.length > 0) {
+            // it's a node
+            var node = nodes.find(function(checkNode){
+                return checkNode.id === params.nodes[0];
+            });
+            result = node.nodeData.attributes;
+        } else {
+            // it's an edge
+            var edge = edges.find(function(checkEdge){
+                return checkEdge.id === params.edges[0];
+            });
+            result = edge.edgeData.attributes;
+        }
+
+        return result;
+    }
+
+    function loadDataViz(xmlData) {
+        // create an array with nodes
+        var xmlNodes = [...xmlData.getElementsByTagName("Node")];
+        xmlNodes.forEach(function (node, index) {
+            var nodePos = node.getAttribute("pos").split(",");
+            var x = parseInt(nodePos[0]);
+            var y = parseInt(nodePos[1]);
+
+            nodes.push({
+                id: node.getAttribute("Id"),
+                label: node.getAttribute("Class"),
+                x: x,
+                y: y,
+                physics: false,
+                nodeData: node
+            });
+        })
+
+        var xmlEdges = [...xmlData.getElementsByTagName("Edge")];
+        xmlEdges.forEach(function (edge, index){
+            background = false;
+            if (edge.getAttribute("enabled") === "0") {
+                background = {
+                    enabled: true,
+                    color: 'rgba(207,0,15,0.5)'
+                };
+            }
+
+            edges.push({
+                id: index,
+                from: edge.getAttribute("nodeOut"),
+                to: edge.getAttribute("nodeIn"),
+                arrows: "to",
+                label: edge.getAttribute("portOut") + " -> " + edge.getAttribute("portIn"),
+                background: background,
+                edgeData: edge 
+            });
+        });
+
+        var dataNodes = new vis.DataSet(nodes);
+        var dataEdges = new vis.DataSet(edges);
+
+        // create a network
+        var container = document.getElementById('mynetwork');
+
+        // provide the data in the vis format
+        var data = {
+            nodes: dataNodes,
+            edges: dataEdges
+        };
+        var options = {
+            edges: {
+                font: {
+                    size: 12
+                }
+            },
+            nodes: {
+                shape: 'box',
+                font: {
+                    bold: {
+                        color: '#0077aa'
+                    }
+                }
+            }
+        };
+
+        // initialize your network!
+        var network = new vis.Network(container, data, options);
+        network.on("click", function (params) {
+            var data = getGraphEntityData(params);
+            document.getElementById('nodeInfo').innerHTML = JSON.stringify(data, null, 4);
+        });
+    }
+
+    function parseXml(xmlString) {
+        var parser = new DOMParser();
+        return parser.parseFromString(xmlString, "text/xml");
+    }
+
+    function handleFileSelect(evt) {
+        var file = evt.target.files[0];
+
+        var reader = new FileReader();
+
+        reader.onload = (function(theFile) {
+            return function(e) {
+                var parsedXml = parseXml(e.target.result);
+                loadDataViz(parsedXml);
+            };
+        })(file);
+
+        reader.readAsText(file);
+    }
+
+    document.getElementById('xmlFile').addEventListener('change', handleFileSelect, false);
+</script>
+</body>
+</html>
