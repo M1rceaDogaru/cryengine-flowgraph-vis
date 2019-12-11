@@ -22,41 +22,67 @@
 <body>
     <div class="file-load">
             Select a Cryengine Flowgraph XML file: <input type="file" id="xmlFile" name="xmlFile">
+            Loaded graphs: <select id="graphs" onchange="onGraphChanged()"></select>
     </div>
     
     <div class="wrapper">
         <div class="left" id="mynetwork"></div>
         <div class="right">
-            <pre id="nodeInfo"></pre>
-        </div>        
+            <pre id="nodeInfo"></pre>            
+        </div>                
     </div>
-    
+    <pre><xmp id="entityInfo"></xmp></pre>    
 
 <script type="text/javascript">
-    var nodes = [], edges = [];
+    var loadedGraphs = {}, nodes = [], edges = [], entities = {};
 
     function getGraphEntityData(params) {
-        var result;
+        var data;
 
         if (params.nodes.length > 0) {
             // it's a node
             var node = nodes.find(function(checkNode){
                 return checkNode.id === params.nodes[0];
             });
-            result = node.nodeData.attributes;
-        } else {
+            data = node.nodeData;
+        } else if (params.edges.length > 0) {
             // it's an edge
             var edge = edges.find(function(checkEdge){
                 return checkEdge.id === params.edges[0];
             });
-            result = edge.edgeData.attributes;
+            data = edge.edgeData;
         }
+
+        var result = {
+            node: {
+                data: {},
+                inputs: {}
+            },
+            entity: ""            
+        };
+
+        if (!data) return result;
+
+        [...data.attributes].forEach(function(item, index){
+            result.node.data[item.name] = item.value;
+            if (item.name === "EntityGUID_64") {
+                result.entity = retrieveEntityByGuid(item.value);
+            }
+        });
+
+        var inputsCollection = data.getElementsByTagName("Inputs");
+        if (inputsCollection.length === 0) return result;
+
+        [...inputsCollection[0].attributes].forEach(function(item, index){
+            result.node.inputs[item.name] = item.value;
+        });
 
         return result;
     }
 
     function loadDataViz(xmlData) {
         // create an array with nodes
+        nodes = [], edges = [];
         var xmlNodes = [...xmlData.getElementsByTagName("Node")];
         xmlNodes.forEach(function (node, index) {
             var nodePos = node.getAttribute("pos").split(",");
@@ -108,7 +134,7 @@
         var options = {
             edges: {
                 font: {
-                    size: 12
+                    size: 16
                 }
             },
             nodes: {
@@ -125,7 +151,8 @@
         var network = new vis.Network(container, data, options);
         network.on("click", function (params) {
             var data = getGraphEntityData(params);
-            document.getElementById('nodeInfo').innerHTML = JSON.stringify(data, null, 4);
+            document.getElementById('nodeInfo').innerHTML = JSON.stringify(data.node, null, 4);
+            document.getElementById('entityInfo').innerHTML = data.entity;
         });
     }
 
@@ -142,11 +169,77 @@
         reader.onload = (function(theFile) {
             return function(e) {
                 var parsedXml = parseXml(e.target.result);
-                loadDataViz(parsedXml);
+                loadFlowGraphs(parsedXml);
+                storeEntities(parsedXml);
             };
         })(file);
 
         reader.readAsText(file);
+    }
+
+    function onGraphChanged() {
+        var graphsDropdown = document.getElementById("graphs");
+        var graphIndex = graphsDropdown.options[graphsDropdown.selectedIndex].value;
+        var xmlGraphData = loadedGraphs[graphIndex];
+        
+        if (!xmlGraphData) return;
+        loadDataViz(xmlGraphData);
+    }
+
+    function loadFlowGraphs(xmlData) {
+        var graphs = xmlData.getElementsByTagName("FlowGraph");
+        loadedGraphs = {};
+        var graphsDropdown = document.getElementById("graphs");
+        graphsDropdown.options.length = 0;
+        graphsDropdown.add(createOption("None", -1));
+
+        var sortedOptions = [];
+        [...graphs].forEach(function(graph, index){            
+            var name = "Unnamed graph";
+            if (graph.parentNode && graph.parentNode.nodeName === "Entity") {
+                name = graph.parentNode.getAttribute("Name");
+            }
+
+            sortedOptions.push(createOption(name, index));
+            loadedGraphs[index] = graph;
+        });
+
+        sortedOptions.sort(function(a, b){
+            if (a.text.toUpperCase() > b.text.toUpperCase()) return 1;
+            else if (a.text.toUpperCase() < b.text.toUpperCase()) return -1;
+            else return 0;
+        });
+
+        sortedOptions.forEach(function(option, index) {
+            graphsDropdown.add(option);
+        });
+    }
+
+    function storeEntities(xmlData) {
+        var xmlEntities = xmlData.getElementsByTagName("Entity");
+        entities = {};
+
+        [...xmlEntities].forEach(function(xmlEntity, index){
+            var entityGuid = xmlEntity.getAttribute("EntityGuid");
+            entities[entityGuid] = xmlEntity;
+        });
+    }
+
+    function retrieveEntityByGuid(entityGuid) {
+        var entity = entities[entityGuid];
+        if (entity) {
+            return entity.outerHTML;
+        }
+
+        return "";
+    }
+
+    function createOption(text, value) {
+        var option = document.createElement("option");
+        option.text = text;
+        option.value = value;
+        
+        return option;
     }
 
     document.getElementById('xmlFile').addEventListener('change', handleFileSelect, false);
